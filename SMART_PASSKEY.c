@@ -5,253 +5,198 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#define LED_PIN 4
-#define LED_MASK 0x00001U
-#define NOMAL 0U
-#define ERROR 1U
+#define LED_PIN (4U)
+#define LED_MASK (0x00001U)
+#define NOMAL (0U) /* error_statusが正常 */
+#define ERROR (1U) /* error_statusがエラー */
 
-// 信号開始合図のエラー値
-#define START_SHORT_ON 9U
-#define START_LONG_ON 11U
-#define START_SHORT_OFF 39U
-#define START_LONG_OFF 41U
+#define MAX_CMD_ARGS (4U) /* 多い引数 */
+#define MIN_CMD_ARGS (3U) /* 少ない引数 */
+#define EXIT_ERROR (1U)   /* エラー発生のリターン時 */
 
-// 表示停止合図のエラー値
-#define END_SHORT_ON 14U
-#define END_LONG_ON 16U
-#define END_SHORT_OFF 34U
-#define END_LONG_OFF 36U
+#define COUNT_MAX_INDEX (4U - 1U) /* 最大値（4回だが、0~3のため-1している） */
+#define MAX_DATA_NUM (20 - 1)     /* 最大値（20回だが、0~19のため-1している） */
 
-// エラー発生タイミング
-#define ERROR_SIGNAL_STOP 0U  // 停止時
-#define ERROR_SIGNAL_START 1U // 開始時
+#define SIGNAL_PATTERN_MAX_INDEX  (4U - 1U)/* 最大値（4回だが、0~3のため-1している） */
+#define SIGNAL_PATTERN_ERROR_INDEX  (3U - 1U)/* 最大値（3回だが、0~2のため-1している） */
 
-// エラー発生条件（信号状態）
-#define ERROR_SIGNAL_OFF 0U // OFF時
-#define ERROR_SIGNAL_ON 1U  // ON時
+/* "start"入力時に使用 */
+#define ARG2_START_EXPECT_DIGITS (6U)          /* 正常（許容）桁数 */
+#define ARG2_START_OVER_DIGITS (7U)            /* 許容より1多い */
+#define ARG2_START_EXPECT_MAX_VALUE (1048575U) /* 最大値（20bitの最大値：0xFFFFF = 1048575） */
 
-// エラーパターンエラー値
-#define SIGNAL_OFF 0U
-#define SIGNAL_ON 1U
+/* "error_type"入力時に使用 */
+#define ARG2_ERROR_TYPE_DIGITS_MIN (1U) /* 最小1桁 */
+#define ARG2_ERROR_TYPE_DIGITS_MAX (2U) /* 最大2桁 */
+/* スタート時のエラー(データを10ms間隔でX回ずつ送信) */
+#define START_ON_SHORT_MS (9U - 1U)   /* 基準90msから10ms短い値 */
+#define START_ON_LONG_MS (11U + 1U)   /* 基準110msから10ms長い値 */
+#define START_OFF_SHORT_MS (39U - 1U) /* 基準390msから10ms短い値 */
+#define START_OFF_LONG_MS (41U + 1U)  /* 基準410msから10ms長い値 */
+/* ストップ時のエラー(データを10ms間隔でX回ずつ送信) */
+#define STOP_ON_SHORT_MS (14U - 1U)  /* 基準140msから10ms短い値 */
+#define STOP_ON_LONG_MS (16U + 1U)   /* 基準160msから10ms長い値 */
+#define STOP_OFF_SHORT_MS (34U - 1U) /* 基準340msから10ms短い値 */
+#define STOP_OFF_LONG_MS (36U + 1U)  /* 基準360msから10ms長い値 */
 
-// パターン順序エラーパターン
-#define PATTERN_OFF 0U        // OFF連続
-#define PATTERN_ON 1U         // ON連続
-#define PATTERN_INCOMPLETE 2U // パターン不足
-#define SIGNAL_NONE (-1)      // 前回値がない
+/* 信号開始合図のエラー値(データを10ms間隔でX回ずつ送信) */
+#define START_SHORT_ON (9U)   /* 基準値90ms */
+#define START_LONG_ON (11U)   /* 基準値110ms */
+#define START_SHORT_OFF (39U) /* 基準値390ms */
+#define START_LONG_OFF (41U)  /* 基準値410ms */
 
-static void start_sign(void);
-static void start_on_err_status_check(void);
-static void start_off_err_status_check(void);
-static void stop_sign(void);
-static void stop_on_err_status_check(void);
-static void stop_off_err_status_check(void);
-static void send_data(char *arg_str, int bit_num);
-static void raise_timing_error(char trigger_time_ms, char error_timing, char signal_state);
-void run_signal_pattern_error(char error_timing, char error_pattern, char count);
+/* 表示停止合図のエラー値(データを10ms間隔でX回ずつ送信) */
+#define END_SHORT_ON (14U)  /* 基準値140ms */
+#define END_LONG_ON (16U)   /* 基準値160ms */
+#define END_SHORT_OFF (34U) /* 基準値340ms */
+#define END_LONG_OFF (36U)  /* 基準値360ms */
 
-static int S_On_Count;  /* 開始合図点灯データ送信カウント */
-static int S_Off_Count; /* 開始合図消灯データ送信カウント */
-static int E_On_Count;  /* 停止合図点灯データ送信カウント */
-static int E_Off_Count; /* 停止合図消灯データ送信カウント */
-static int Err_status;  /* エラー状態 */
+/* エラー発生タイミング */
+#define ERROR_SIGNAL_STOP (0U)  /* 停止時 */
+#define ERROR_SIGNAL_START (1U) /* 開始時 */
+
+/* エラー発生条件（信号状態）*/
+#define ERROR_SIGNAL_OFF (0U) /* OFF時 */
+#define ERROR_SIGNAL_ON (1U)  /* ON時 */
+
+/* エラーパターンエラー値 */
+#define SIGNAL_OFF (0U) /* OFF時 */
+#define SIGNAL_ON (1U)  /* ON時 */
+
+/* パターン順序エラーパターン */
+#define PATTERN_OFF (0U)        /* OFF連続 */
+#define PATTERN_ON (1U)         /* ON連続 */
+#define PATTERN_INCOMPLETE (2U) /* パターン不足 */
+#define SIGNAL_NONE (-1)        /* 前回値がない */
+
+/* エラー種別番号 */
+typedef enum
+{
+    ERROR_TYPE_1 = 1, /* 1番目のエラー種別 */
+    ERROR_TYPE_2,     /* 2 */
+    ERROR_TYPE_3,     /* 3 */
+    ERROR_TYPE_4,     /* 4 */
+    ERROR_TYPE_5,     /* 5 */
+    ERROR_TYPE_6,     /* 6 */
+    ERROR_TYPE_7,     /* 7 */
+    ERROR_TYPE_8,     /* 8 */
+    ERROR_TYPE_9,     /* 9 */
+    ERROR_TYPE_10,    /* 10 */
+    ERROR_TYPE_11,    /* 11 */
+    ERROR_TYPE_12,    /* 12 */
+    ERROR_TYPE_13,    /* 13 */
+    ERROR_TYPE_14     /* 14 */
+} ERROR_TYPE_t;
+
+static void StartSign(void);
+static void StartOnErrStatusCheck(void);
+static void StartOffErrStatusCheck(void);
+static void StopSign(void);
+static void StopOnErrStatusCheck(void);
+static void StopOffErrStatusCheck(void);
+static void SendData(char *arg_str, int bit_num);
+static void RaiseTimingError(char trigger_time_ms, char error_timing, char signal_state);
+static void RunSignalPatternError(char error_timing, char error_pattern, char count);
+
+static int start_on_count;  /* 開始合図点灯データ送信カウント */
+static int start_off_count; /* 開始合図消灯データ送信カウント */
+static int end_on_count;    /* 停止合図点灯データ送信カウント */
+static int end_off_count;   /* 停止合図消灯データ送信カウント */
+static int error_status;    /* エラー状態 */
 
 int main(int argc, char *argv[])
 {
-    int led_mode;
-    Err_status = 0;
+    bool is_all_digit = TRUE; /* 数字のみのデータか確認用 */
+    int num;                  /* 整数変換後データ格納用 */
+    int i;
+    error_status = 0;
 
     wiringPiSetupGpio();
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
 
-    if (argc >= 4)
+    /* 入力引数が多いか確認 */
+    if (argc >= MAX_CMD_ARGS)
     {
         printf("引数エラーです。多いです。\n");
-        return 1;
+        return EXIT_ERROR;
     }
 
     if (strcmp(argv[1], "start") == 0)
     {
-        if (argc < 3)
+        /* "start"入力時処理 */
+
+        /* 入力引数が少ないか確認 */
+        if (argc < MIN_CMD_ARGS)
         {
             printf("引数エラーです。少ないです。\n");
-            return 1;
+            return EXIT_ERROR;
         }
-        if (strlen(argv[2]) == 6)
+
+        /* 桁数確認 */
+        if (strlen(argv[2]) == ARG2_START_EXPECT_DIGITS)
         {
             //			check_num(argv[2]);		//すべての文字が数字かチェック
-            bool is_all_digit = TRUE;
-            for (int i = 0; argv[2][i] != '\0'; i++)
-            { // argv[1]文字列のi番目の文字を取得
+
+            for (i = 0; argv[2][i] != '\0'; i++)
+            {
+                /* 文字列が数字か確認 */
                 if (!isdigit(argv[2][i]))
                 {
-                    is_all_digit = FALSE; // 数字でない文字が見つかった
+                    is_all_digit = FALSE; /* 数字ではない文字が含まれていた */
                     break;
                 }
             }
+
             if (is_all_digit == TRUE)
             {
-                printf("'%s' は6桁の数字です。\n", argv[2]);
-                int num = atoi(argv[2]); // 6桁の数字を整数とする
-                // 開始合図
-                start_sign();
-                if (Err_status != ERROR)
+                printf("'%s' は%u桁の数字です。\n", argv[2], ARG2_START_EXPECT_DIGITS);
+                num = atoi(argv[2]); /* 文字列を整数に変換 */
+
+                /* 開始合図 */
+                StartSign();
+                if (error_status != ERROR)
                 {
-                    // データ送信
-                    send_data(argv[2], num);
+                    /* エラーがなければデータ送信 */
+                    SendData(argv[2], num);
                     digitalWrite(LED_PIN, HIGH);
                 }
             }
             else
             {
-                printf("'%s' は数字を含んでいません。\n", argv[2]);
+                /* 数字ではない文字が含まれていた */
+                printf("'%s' は数字以外を含んでいます。\n", argv[2]);
                 digitalWrite(LED_PIN, HIGH);
             }
         }
-        else if (strlen(argv[2]) == 7)
+        else if (strlen(argv[2]) == ARG2_START_OVER_DIGITS)
         {
-            bool is_all_digit = TRUE;
-            for (int i = 0; argv[2][i] != '\0'; i++)
-            { // argv[1]文字列のi番目の文字を取得
+            /* 入力桁数が1多い */
+            for (i = 0; argv[2][i] != '\0'; i++)
+            {
+                /* 文字列が数字か確認 */
                 if (!isdigit(argv[2][i]))
                 {
-                    is_all_digit = FALSE; // 数字でない文字が見つかった
+                    is_all_digit = FALSE; /* 数字ではない文字が含まれていた */
                     break;
                 }
             }
+
             if (is_all_digit == TRUE)
             {
-                printf("'%s' は7桁の数字です。\n", argv[2]);
-                int num = atoi(argv[2]); // 7桁の数字を整数とする
-                if (num <= 1048575)
+                printf("'%s' は%u桁の数字です。\n", argv[2], ARG2_START_OVER_DIGITS);
+                num = atoi(argv[2]); /* 文字列を整数に変換 */
+
+                if (num <= ARG2_START_EXPECT_MAX_VALUE)
                 {
-                    // 開始合図
-                    start_sign();
-                    if (Err_status != ERROR)
+                    /* 開始合図 */
+                    StartSign();
+                    if (error_status != ERROR)
                     {
-                        // データ送信
-                        send_data(argv[2], num);
+                        /* エラーがなければデータ送信 */
+                        SendData(argv[2], num);
                         digitalWrite(LED_PIN, HIGH);
                     }
-                }
-                else
-                {
-                    printf("'%s' は最大値を超えています。\n", argv[2]);
-                    digitalWrite(LED_PIN, HIGH);
-                }
-            }
-            else
-            {
-                printf("'%s' は数字を含んでいません。\n", argv[2]);
-                digitalWrite(LED_PIN, HIGH);
-            }
-        }
-        else
-        {
-            printf("'%s' は6桁でも7桁でもありません。\n", argv[2]);
-            digitalWrite(LED_PIN, HIGH);
-        }
-    }
-    else if (strcmp(argv[1], "error_type") == 0)
-    {
-        if (argc < 3)
-        {
-            printf("引数エラーです。少ないです。/n");
-            return 1;
-        }
-
-        if ((strlen(argv[2]) >= 1) && (strlen(argv[2]) <= 2))
-        {
-            bool is_digit = TRUE;
-            for (int i = 0; argv[2][i] != '\0'; i++)
-            {
-                // argv[1]文字列のi番目の文字を取得
-                if (!isdigit(argv[2][i]))
-                {
-                    is_digit = FALSE; // 数字でない文字が見つかった
-                    break;
-                }
-            }
-            if (is_digit == TRUE)
-            {
-                int num = atoi(argv[2]); // 2桁の数字を整数とする
-                if ((num >= 1) && (num <= 14))
-                {
-                    printf("'%s' は入力範囲内です。\n", argv[2]);
-                    switch (num)
-                    {
-                    case 1:
-                        /* 開始 / 短すぎるON期間 */
-                        raise_timing_error(9 - 1, ERROR_SIGNAL_START, ERROR_SIGNAL_ON);
-                        break;
-
-                    case 2:
-                        /* 開始 / 長すぎるON期間 */
-                        raise_timing_error(11 + 1, ERROR_SIGNAL_START, ERROR_SIGNAL_ON);
-                        break;
-
-                    case 3:
-                        /* 開始 / 短すぎるOFF期間 */
-                        raise_timing_error(39 - 1, ERROR_SIGNAL_START, ERROR_SIGNAL_OFF);
-                        break;
-
-                    case 4:
-                        /* 開始 / 長すぎるON期間 */
-                        raise_timing_error(41 + 1, ERROR_SIGNAL_START, ERROR_SIGNAL_OFF);
-                        break;
-
-                    case 5:
-                        /* 開始 / ON連続 */
-                        run_signal_pattern_error(ERROR_SIGNAL_START, PATTERN_ON, 4 - 1);
-                        break;
-
-                    case 6:
-                        /* 開始 / OFF連続 */
-                        run_signal_pattern_error(ERROR_SIGNAL_START, PATTERN_OFF, 4 - 1);
-                        break;
-
-                    case 7:
-                        /* 開始 / パターン不足 */
-                        run_signal_pattern_error(ERROR_SIGNAL_START, PATTERN_INCOMPLETE, 4 - 2);
-                        break;
-
-                    case 8:
-                        /* 停止 / 短すぎるON期間 */
-                        raise_timing_error(14 - 1, ERROR_SIGNAL_STOP, ERROR_SIGNAL_ON);
-                        break;
-
-                    case 9:
-                        /* 停止 / 長すぎるON期間 */
-                        raise_timing_error(16 + 1, ERROR_SIGNAL_STOP, ERROR_SIGNAL_ON);
-                        break;
-
-                    case 10:
-                        /* 停止 / 短すぎるOFF期間 */
-                        raise_timing_error(34 - 1, ERROR_SIGNAL_STOP, ERROR_SIGNAL_OFF);
-                        break;
-
-                    case 11:
-                        /* 停止 / 長すぎるOFF期間 */
-                        raise_timing_error(36 + 1, ERROR_SIGNAL_START, ERROR_SIGNAL_OFF);
-                        break;
-
-                    case 12:
-                        /* 停止 / ON連続 */
-                        run_signal_pattern_error(ERROR_SIGNAL_STOP, PATTERN_ON, 4 - 1);
-                        break;
-
-                    case 13:
-                        /* 停止 / OFF連続 */
-                        run_signal_pattern_error(ERROR_SIGNAL_STOP, PATTERN_OFF, 4 - 1);
-                        break;
-
-                    case 14:
-                        /* 停止 / パターン不足 */
-                        run_signal_pattern_error(ERROR_SIGNAL_STOP, PATTERN_INCOMPLETE, 4 - 2);
-                        break;
-                    }
-                    printf("error_type: %d\n", num);
                 }
                 else
                 {
@@ -267,14 +212,142 @@ int main(int argc, char *argv[])
         }
         else
         {
-            printf("'%s' は入力範囲外です。1桁以上2桁以下で入力してください。\n", argv[2]);
+            printf("'%s' は%u桁でも%u桁でもありません。\n", argv[2], ARG2_START_EXPECT_DIGITS, ARG2_START_OVER_DIGITS);
+            digitalWrite(LED_PIN, HIGH);
+        }
+    }
+    else if (strcmp(argv[1], "error_type") == 0)
+    {
+        /* "error_type"入力時処理 */
+
+        /* 入力引数が少ないか確認 */
+        if (argc < MIN_CMD_ARGS)
+        {
+            printf("引数エラーです。少ないです。/n");
+            return EXIT_ERROR;
+        }
+
+        /* 桁数確認 */
+        if ((strlen(argv[2]) >= ARG2_ERROR_TYPE_DIGITS_MIN) && (strlen(argv[2]) <= ARG2_ERROR_TYPE_DIGITS_MAX))
+        {
+            for (i = 0; argv[2][i] != '\0'; i++)
+            {
+                /* 文字列が数字か確認 */
+                if (!isdigit(argv[2][i]))
+                {
+                    /* 数字ではない文字が含まれていた */
+                    is_all_digit = FALSE;
+                    break;
+                }
+            }
+
+            if (is_all_digit == TRUE)
+            {
+                num = atoi(argv[2]); /* 文字列を整数に変換 */
+
+                /* 範囲内のデータか確認 */
+                if ((num >= ERROR_TYPE_1) && (num <= ERROR_TYPE_14))
+                {
+                    switch (num)
+                    {
+                    case ERROR_TYPE_1:
+                        /* 開始 / 短すぎるON期間 */
+                        RaiseTimingError(START_ON_SHORT_MS, ERROR_SIGNAL_START, ERROR_SIGNAL_ON);
+                        break;
+
+                    case ERROR_TYPE_2:
+                        /* 開始 / 長すぎるON期間 */
+                        RaiseTimingError(START_ON_LONG_MS, ERROR_SIGNAL_START, ERROR_SIGNAL_ON);
+                        break;
+
+                    case ERROR_TYPE_3:
+                        /* 開始 / 短すぎるOFF期間 */
+                        RaiseTimingError(START_OFF_SHORT_MS, ERROR_SIGNAL_START, ERROR_SIGNAL_OFF);
+                        break;
+
+                    case ERROR_TYPE_4:
+                        /* 開始 / 長すぎるON期間 */
+                        RaiseTimingError(START_OFF_LONG_MS, ERROR_SIGNAL_START, ERROR_SIGNAL_OFF);
+                        break;
+
+                    case ERROR_TYPE_5:
+                        /* 開始 / ON連続 */
+                        RunSignalPatternError(ERROR_SIGNAL_START, PATTERN_ON, SIGNAL_PATTERN_MAX_INDEX);
+                        break;
+
+                    case ERROR_TYPE_6:
+                        /* 開始 / OFF連続 */
+                        RunSignalPatternError(ERROR_SIGNAL_START, PATTERN_OFF, SIGNAL_PATTERN_MAX_INDEX);
+                        break;
+
+                    case ERROR_TYPE_7:
+                        /* 開始 / パターン不足 */
+                        RunSignalPatternError(ERROR_SIGNAL_START, PATTERN_INCOMPLETE, SIGNAL_PATTERN_ERROR_INDEX);
+                        break;
+
+                    case ERROR_TYPE_8:
+                        /* 停止 / 短すぎるON期間 */
+                        RaiseTimingError(STOP_ON_SHORT_MS, ERROR_SIGNAL_STOP, ERROR_SIGNAL_ON);
+                        break;
+
+                    case ERROR_TYPE_9:
+                        /* 停止 / 長すぎるON期間 */
+                        RaiseTimingError(STOP_ON_LONG_MS, ERROR_SIGNAL_STOP, ERROR_SIGNAL_ON);
+                        break;
+
+                    case ERROR_TYPE_10:
+                        /* 停止 / 短すぎるOFF期間 */
+                        RaiseTimingError(STOP_OFF_SHORT_MS, ERROR_SIGNAL_STOP, ERROR_SIGNAL_OFF);
+                        break;
+
+                    case ERROR_TYPE_11:
+                        /* 停止 / 長すぎるOFF期間 */
+                        RaiseTimingError(STOP_OFF_LONG_MS, ERROR_SIGNAL_START, ERROR_SIGNAL_OFF);
+                        break;
+
+                    case ERROR_TYPE_12:
+                        /* 停止 / ON連続 */
+                        RunSignalPatternError(ERROR_SIGNAL_STOP, PATTERN_ON, SIGNAL_PATTERN_MAX_INDEX);
+                        break;
+
+                    case ERROR_TYPE_13:
+                        /* 停止 / OFF連続 */
+                        RunSignalPatternError(ERROR_SIGNAL_STOP, PATTERN_OFF, SIGNAL_PATTERN_MAX_INDEX);
+                        break;
+
+                    case ERROR_TYPE_14:
+                        /* 停止 / パターン不足 */
+                        RunSignalPatternError(ERROR_SIGNAL_STOP, PATTERN_INCOMPLETE, SIGNAL_PATTERN_ERROR_INDEX);
+                        break;
+                    }
+
+                    printf("error_type: %d\n", num);
+                }
+                else
+                {
+                    printf("'%s' は入力範囲外です。%u～%uまでの数字を入力してください。\n", argv[2], ERROR_TYPE_1, ERROR_TYPE_14);
+                    digitalWrite(LED_PIN, HIGH);
+                }
+            }
+            else
+            {
+                printf("'%s' は数字以外を含んでいます。\n", argv[2]);
+                digitalWrite(LED_PIN, HIGH);
+            }
+        }
+        else
+        {
+            printf("'%s' は入力範囲外です。%u桁以上%u桁以下で入力してください。\n", argv[2], ARG2_ERROR_TYPE_DIGITS_MIN, ARG2_ERROR_TYPE_DIGITS_MAX);
             digitalWrite(LED_PIN, HIGH);
         }
     }
     else if (strcmp(argv[1], "stop") == 0)
     {
-        stop_sign();
-        if (Err_status != ERROR)
+        /* "stop"入力時処理 */
+
+        /* 停止合図 */
+        StopSign();
+        if (error_status != ERROR)
         {
             digitalWrite(LED_PIN, HIGH);
         }
@@ -289,104 +362,103 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-void raise_timing_error(char trigger_time_ms, char error_timing, char signal_state)
+void RaiseTimingError(char trigger_time_ms, char error_timing, char signal_state)
 {
-    int c = 0;
+    int i = 0;
 
-    for (int j = 0; j <= 1; j++)
+    start_on_count = 0;
+    printf("開始合図です。\n");
+
+    if (error_timing == ERROR_SIGNAL_START)
     {
-        S_On_Count = 0;
-        printf("開始合図です。\n");
-
-        if (error_timing == ERROR_SIGNAL_START)
+        /* 開始合図 */
+        for (i = 0; i < trigger_time_ms; i++)
         {
-            /* 開始合図 */
-            for (c = 0; c < trigger_time_ms; c++)
-            {
-                digitalWrite(LED_PIN, LOW);
-                delay(10);
-            }
-
-            Err_status = NOMAL;
-            if (signal_state == ERROR_SIGNAL_ON)
-            {
-                S_On_Count = c;
-                start_on_err_status_check();
-            }
-            else if (signal_state == ERROR_SIGNAL_OFF)
-            {
-                /* 停止合図 */
-                S_Off_Count = c;
-                start_off_err_status_check();
-            }
-            if (Err_status == ERROR)
-            {
-                printf("開始合図エラーです。\n");
-                break;
-            }
+            digitalWrite(LED_PIN, LOW);
+            delay(10); /* 10msウェイト */
         }
-        else if (error_timing == ERROR_SIGNAL_STOP)
-        {
-            /* 信号停止時 */
-            for (c = 0; c < trigger_time_ms; c++)
-            {
-                digitalWrite(LED_PIN, LOW);
-                delay(10);
-            }
 
-            Err_status = NOMAL;
-            if (signal_state == ERROR_SIGNAL_ON)
-            {
-                E_On_Count = c;
-                stop_on_err_status_check();
-            }
-            else if (signal_state == ERROR_SIGNAL_OFF)
-            {
-                E_Off_Count = c;
-                stop_off_err_status_check();
-            }
-            if (Err_status == ERROR)
-            {
-                printf("停止合図エラーです。\n");
-                break;
-            }
+        error_status = NOMAL;
+        if (signal_state == ERROR_SIGNAL_ON)
+        {
+            /* ON時の処理 */
+            start_on_count = i;
+            StartOnErrStatusCheck(); /* errorステータスをチェックする */
+        }
+        else if (signal_state == ERROR_SIGNAL_OFF)
+        {
+            /* OFF時の処理 */
+            start_off_count = i;
+            StartOffErrStatusCheck();
+        }
+
+        if (error_status == ERROR)
+        {
+            printf("開始合図エラーです。\n");
+        }
+    }
+    else if (error_timing == ERROR_SIGNAL_STOP)
+    {
+        /* 停止合図 */
+        for (i = 0; i < trigger_time_ms; i++)
+        {
+            digitalWrite(LED_PIN, LOW);
+            delay(10); /* 10msウェイト */
+        }
+
+        error_status = NOMAL;
+        if (signal_state == ERROR_SIGNAL_ON)
+        {
+            end_on_count = i;
+            StopOnErrStatusCheck();
+        }
+        else if (signal_state == ERROR_SIGNAL_OFF)
+        {
+            end_off_count = i;
+            StopOffErrStatusCheck();
+        }
+        if (error_status == ERROR)
+        {
+            printf("停止合図エラーです。\n");
         }
     }
 }
 
-void start_sign(void)
+void StartSign(void)
 {
-    for (int j = 0; j <= 1; j++)
+    int j;
+    int i;
+    for (j = 0; j <= 1; j++)
     {
-        S_On_Count = 0;
+        start_on_count = 0;
         printf("開始合図です。\n");
 
         /* 短すぎるON期間 */
-        for (int c = 0; c < 9; c++)
+        for (i = 0; i < START_ON_SHORT_MS; i++)
         {
             digitalWrite(LED_PIN, LOW);
-            delay(10);
-            S_On_Count++;
+            delay(10); /* 10msウェイト */
+            start_on_count++;
         }
-        start_on_err_status_check();
-        if (Err_status == ERROR)
+        StartOnErrStatusCheck();
+        if (error_status == ERROR)
         {
             printf("開始合図エラーです。\n");
             break;
         }
 
         /* 短すぎるOFF期間 */
-        S_Off_Count = 0;
+        start_off_count = 0;
         printf("開始合図です。\n");
 
-        for (int c = 0; c < 39; c++)
+        for (i = 0; i < START_OFF_SHORT_MS; i++)
         {
             digitalWrite(LED_PIN, HIGH);
-            delay(10);
-            S_Off_Count++;
+            delay(10); /* 10msウェイト */
+            start_off_count++;
         }
-        start_on_err_status_check();
-        if (Err_status == ERROR)
+        StartOnErrStatusCheck();
+        if (error_status == ERROR)
         {
             printf("開始合図エラーです。\n");
             break;
@@ -394,144 +466,150 @@ void start_sign(void)
     }
 }
 
-void start_on_err_status_check(void)
+void StartOnErrStatusCheck(void)
 {
-    Err_status = NOMAL;
-    if ((S_On_Count < START_SHORT_ON) || (S_On_Count > START_LONG_ON))
+    error_status = NOMAL;
+    if ((start_on_count < START_SHORT_ON) || (start_on_count > START_LONG_ON))
     {
-        Err_status = ERROR;
+        error_status = ERROR;
     }
 }
-void start_off_err_status_check(void)
+void StartOffErrStatusCheck(void)
 {
-    Err_status = NOMAL;
-    if ((S_Off_Count < START_SHORT_OFF) || (S_Off_Count > START_LONG_OFF))
+    error_status = NOMAL;
+    if ((start_off_count < START_SHORT_OFF) || (start_off_count > START_LONG_OFF))
     {
-        Err_status = ERROR;
+        error_status = ERROR;
     }
 }
 
-void stop_sign(void)
+void StopSign(void)
 {
-    for (int j = 0; j <= 1; j++)
+    int j;
+    int i;
+    for (j = 0; j <= 1; j++)
     {
         printf("表示停止合図です。\n");
 
         /* 短すぎるON期間 */
-        E_On_Count = 0;
-        for (int c = 0; c < 14; c++)
+        end_on_count = 0;
+        for (i = 0; i < STOP_ON_SHORT_MS; i++)
         {
             digitalWrite(LED_PIN, LOW);
-            delay(10);
-            E_On_Count++;
+            delay(10); /* 10msウェイト */
+            end_on_count++;
         }
-        stop_on_err_status_check();
-        if (Err_status == ERROR)
+        StopOnErrStatusCheck();
+        if (error_status == ERROR)
         {
             printf("表示停止合図エラーです。\n");
             break;
         }
 
         /* 長すぎるON期間 */
-        E_On_Count = 0;
-        for (int c = 0; c < 16; c++)
+        end_on_count = 0;
+        for (i = 0; i < STOP_ON_LONG_MS; i++)
         {
             digitalWrite(LED_PIN, LOW);
-            delay(10);
-            E_On_Count++;
+            delay(10); /* 10msウェイト */
+            end_on_count++;
         }
-        stop_on_err_status_check();
-        if (Err_status == ERROR)
+        StopOnErrStatusCheck();
+        if (error_status == ERROR)
         {
-            printf("表示停止合図エラーです。E1\n");
+            printf("表示停止合図エラーです。\n");
             break;
         }
 
         printf("表示停止合図です。\n");
 
         /* 短すぎるOFF期間 */
-        E_Off_Count = 0;
-        for (int c = 0; c < 34; c++)
+        end_off_count = 0;
+        for (i = 0; i < STOP_OFF_SHORT_MS; i++)
         {
             digitalWrite(LED_PIN, HIGH);
-            delay(10);
-            E_Off_Count++;
+            delay(10); /* 10msウェイト */
+            end_off_count++;
         }
-        stop_off_err_status_check();
-        if (Err_status == ERROR)
+        StopOffErrStatusCheck();
+        if (error_status == ERROR)
         {
             printf("表示停止合図エラーです。\n");
             break;
         }
 
         /* 長すぎるOFF期間 */
-        E_Off_Count = 0;
-        for (int c = 0; c < 36; c++)
+        end_off_count = 0;
+        for (i = 0; i < STOP_OFF_LONG_MS; i++)
         {
             digitalWrite(LED_PIN, HIGH);
-            delay(10);
-            E_Off_Count++;
+            delay(10); /* 10msウェイト */
+            end_off_count++;
         }
-        stop_off_err_status_check();
-        if (Err_status == ERROR)
+        StopOffErrStatusCheck();
+        if (error_status == ERROR)
         {
-            printf("表示停止合図エラーです。E2\n");
+            printf("表示停止合図エラーです。\n");
             break;
         }
     }
 }
 
-void stop_on_err_status_check(void)
+void StopOnErrStatusCheck(void)
 {
-    Err_status = NOMAL;
-    if ((E_On_Count < END_SHORT_ON) || (E_On_Count > END_LONG_ON))
+    error_status = NOMAL;
+    if ((end_on_count < END_SHORT_ON) || (end_on_count > END_LONG_ON))
     {
-        Err_status = ERROR;
+        error_status = ERROR;
     }
 }
-void stop_off_err_status_check(void)
+void StopOffErrStatusCheck(void)
 {
-    Err_status = NOMAL;
-    if ((E_Off_Count < END_SHORT_OFF) || (E_Off_Count > END_LONG_OFF))
+    error_status = NOMAL;
+    if ((end_off_count < END_SHORT_OFF) || (end_off_count > END_LONG_OFF))
     {
-        Err_status = ERROR;
+        error_status = ERROR;
     }
 }
 
-void run_signal_pattern_error(char error_timing, char error_pattern, char count)
+void RunSignalPatternError(char error_timing, char error_pattern, char count)
 {
-    const int signal_pattern_on[4] = {SIGNAL_ON, SIGNAL_ON, SIGNAL_OFF, SIGNAL_ON};    // 2回連続ONを含むパターン
-    const int signal_pattern_off[4] = {SIGNAL_ON, SIGNAL_OFF, SIGNAL_OFF, SIGNAL_OFF}; // 2回連続OFFを含むパターン
-    const int signal_patterns_incomplete[3] = {SIGNAL_ON, SIGNAL_OFF, SIGNAL_ON};      // パターン不足
-    int prev_signal_state = SIGNAL_NONE;                                               // 前回値保存
-    int curr_signal_state = SIGNAL_NONE;                                               // 今回値保存
+    const int signal_pattern_on[4] = {SIGNAL_ON, SIGNAL_ON, SIGNAL_OFF, SIGNAL_ON};    /* 2回連続ONを含むパターン */
+    const int signal_pattern_off[4] = {SIGNAL_ON, SIGNAL_OFF, SIGNAL_OFF, SIGNAL_OFF}; /* 2回連続OFFを含むパターン */
+    const int signal_patterns_incomplete[3] = {SIGNAL_ON, SIGNAL_OFF, SIGNAL_ON};      /* パターン不足 */
+    int prev_signal_state = SIGNAL_NONE;                                               /* 前回値保存 */
+    int curr_signal_state = SIGNAL_NONE;                                               /* 今回値保存 */
     int i = 0;
 
-    if (count == (4 - 1))
+    /* count数が不足していないか確認 */
+    if (count == (COUNT_MAX_INDEX))
     {
 
         for (i = 0; i < count; i++)
         {
             if (error_pattern == PATTERN_ON)
             {
+                /* ONが2回連続パターン */
                 curr_signal_state = signal_pattern_on[i];
             }
             else if (error_pattern == PATTERN_OFF)
             {
+                /* OFFが2回連続パターン */
                 curr_signal_state = signal_pattern_off[i];
             }
 
             if (error_timing == ERROR_SIGNAL_START)
             {
+                /* スタート時*/
                 if (curr_signal_state == SIGNAL_ON)
                 {
                     digitalWrite(LED_PIN, LOW);
-                    delay(100);
+                    delay(100); /* ON期間100ms送信 */
                 }
                 else
                 {
                     digitalWrite(LED_PIN, HIGH);
-                    delay(400);
+                    delay(400); /* OFF期間100ms送信 */
                 }
             }
             else if (error_timing == ERROR_SIGNAL_STOP)
@@ -539,19 +617,15 @@ void run_signal_pattern_error(char error_timing, char error_pattern, char count)
                 if (curr_signal_state == SIGNAL_ON)
                 {
                     digitalWrite(LED_PIN, LOW);
-                    delay(150);
+                    delay(150); /* ON期間150ms送信 */
                 }
                 else
                 {
                     digitalWrite(LED_PIN, HIGH);
-                    delay(350);
+                    delay(350); /* OFF期間350ms送信 */
                 }
             }
 
-            if (i == 4)
-            {
-                printf("任務完了テスト用\n");
-            }
             if (prev_signal_state == curr_signal_state)
             {
                 printf("パターンエラーです。不正な順序です。\n");
@@ -569,12 +643,13 @@ void run_signal_pattern_error(char error_timing, char error_pattern, char count)
     }
 }
 
-void send_data(char *arg_str, int bit_num)
+void SendData(char *arg_str, int bit_num)
 {
     bool is_led_light;
+    int i;
 
     printf("データ送信します。\n");
-    for (int i = 19; i >= 0; i--)
+    for (i = MAX_DATA_NUM; i >= 0; i--)
     {
         if (((bit_num >> i) & LED_MASK) != 0)
         {
@@ -594,6 +669,6 @@ void send_data(char *arg_str, int bit_num)
             printf("'%s'の'%d'bit目は消灯です。\n", arg_str, i);
             digitalWrite(LED_PIN, HIGH);
         }
-        delay(100);
+        delay(100); /* 100ms送信 */
     }
 }
