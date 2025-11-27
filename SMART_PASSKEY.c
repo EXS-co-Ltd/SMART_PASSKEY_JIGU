@@ -49,20 +49,20 @@
 #define STOP_OFF_LONG_MS (STOP_OFF_MS + 2U)  /* 基準値から20ms長い値 */
 
 /* 信号開始合図のエラー値(データを10ms間隔でX回ずつ送信) */
-#define START_SHORT_ON (9U)   /* 基準値90ms */
-#define START_LONG_ON (11U)   /* 基準値110ms */
-#define START_SHORT_OFF (39U) /* 基準値390ms */
-#define START_LONG_OFF (41U)  /* 基準値410ms */
+#define START_SHORT_ON (9U)
+#define START_LONG_ON (11U)
+#define START_SHORT_OFF (39U)
+#define START_LONG_OFF (41U)
 
 /* 表示停止合図のエラー値(データを10ms間隔でX回ずつ送信) */
-#define END_SHORT_ON (14U)  /* 基準値140ms */
-#define END_LONG_ON (16U)   /* 基準値160ms */
-#define END_SHORT_OFF (34U) /* 基準値340ms */
-#define END_LONG_OFF (36U)  /* 基準値360ms */
+#define END_SHORT_ON (14U)
+#define END_LONG_ON (16U)
+#define END_SHORT_OFF (34U)
+#define END_LONG_OFF (36U)
 
 /* データ送信中エラー */
-#define SEND_DATA_MAX_COUNT (20U)     /* 送信データの最大数 */
-#define SEND_TIMEOUT_LIMIT_MS (2000U) /* データ送信時間の上限(ms) */
+#define SEND_DATA_MAX_COUNT (20U)    /* 送信データの最大数 */
+#define SEND_TIMEOUT_LIMIT_MS (200U) /* データ送信時間の上限(ms) */
 
 /* パターン順序エラーパターン */
 #define PATTERN_OFF (0U)        /* OFF連続 */
@@ -403,7 +403,7 @@ int main(int argc, char *argv[])
             if (error_status != ERROR)
             {
                 /* エラーがなければデータ送信 */
-                SendData(argv[2], num);
+                SendData(argv[3], error_type_send_num);
                 digitalWrite(LED_PIN, HIGH);
             }
 
@@ -464,18 +464,11 @@ void RaiseTimingError(char trigger_time_ms, ERROR_TIMING_t error_timing, ERROR_S
     int i = 0;
 
     start_on_count = 0;
+    error_status = NOMAL;
     printf("開始合図です。\n");
 
     if (error_timing == ERROR_TIMING_START)
     {
-        /* 開始合図 */
-        for (i = 0; i < trigger_time_ms; i++)
-        {
-            digitalWrite(LED_PIN, LOW);
-            delay(10); /* 10ms送信 */
-        }
-
-        error_status = NOMAL;
         if (signal_state == ERROR_SIGNAL_ON)
         {
             /* ON時の処理 */
@@ -488,22 +481,9 @@ void RaiseTimingError(char trigger_time_ms, ERROR_TIMING_t error_timing, ERROR_S
             start_off_count = i;
             StartOffErrStatusCheck();
         }
-
-        if (error_status == ERROR)
-        {
-            printf("開始合図エラーです。\n");
-        }
     }
     else
     {
-        /* 停止合図 */
-        for (i = 0; i < trigger_time_ms; i++)
-        {
-            digitalWrite(LED_PIN, LOW);
-            delay(10); /* 10ms送信 */
-        }
-
-        error_status = NOMAL;
         if (signal_state == ERROR_SIGNAL_ON)
         {
             end_on_count = i;
@@ -514,11 +494,36 @@ void RaiseTimingError(char trigger_time_ms, ERROR_TIMING_t error_timing, ERROR_S
             end_off_count = i;
             StopOffErrStatusCheck();
         }
+    }
 
-        if (error_status == ERROR)
+    if (error_status == ERROR)
+    {
+        printf("開始合図エラーです。\n");
+    }
+
+    if (signal_state == ERROR_SIGNAL_ON)
+    {
+        for (i = 0; i < trigger_time_ms; i++)
         {
-            printf("停止合図エラーです。\n");
+            digitalWrite(LED_PIN, LOW);
+            delay(10); /* 10ms送信 */
         }
+    }
+    else
+    {
+        /* 動作確認用 / OFF期間が正しいか */
+        //digitalWrite(LED_PIN, LOW);
+        //delay(10); /* 10ms送信 */
+
+        for (i = 0; i < trigger_time_ms; i++)
+        {
+            digitalWrite(LED_PIN, HIGH);
+            delay(10); /* 10ms送信 */
+        }
+        
+        /* 動作確認用 / OFF期間が正しいか */
+        //digitalWrite(LED_PIN, LOW);
+        //delay(10); /* 10ms送信 */
     }
 }
 
@@ -537,7 +542,9 @@ void StartSign(void)
             delay(10); /* 10ms送信 */
             start_on_count++;
         }
+
         StartOnErrStatusCheck();
+
         if (error_status == ERROR)
         {
             printf("開始合図エラーです。\n");
@@ -553,7 +560,9 @@ void StartSign(void)
             delay(10); /* 10ms送信 */
             start_off_count++;
         }
+
         StartOnErrStatusCheck();
+
         if (error_status == ERROR)
         {
             printf("開始合図エラーです。\n");
@@ -606,7 +615,7 @@ void StopSign(void)
 
         for (i = 0; i < STOP_OFF_MS; i++)
         {
-            digitalWrite(LED_PIN, LOW);
+            digitalWrite(LED_PIN, HIGH);
             delay(10); /* 10ms送信 */
             end_off_count++;
         }
@@ -673,7 +682,7 @@ void RunSignalPatternError(char error_timing, ERROR_PATTERN_t error_pattern, cha
                 else
                 {
                     digitalWrite(LED_PIN, HIGH);
-                    delay(400); /* OFF期間100ms送信 */
+                    delay(400); /* OFF期間400ms送信 */
                 }
             }
             else
@@ -718,7 +727,7 @@ int CheckSendDelay(int wait_time_ms)
     for (i = 0; i < wait_time_ms; i++)
     {
         wait_time_count++;
-        delay(1); /* 1ms送信 */
+        delay(10); /* 10ms送信 */
     }
 
     if (wait_time_count > SEND_TIMEOUT_LIMIT_MS)
@@ -767,11 +776,11 @@ int SendData(char *arg_str, int bit_num)
 
         if (cmd_send_state == CMD_SEND_ERROR)
         {
-            CheckSendDelay(101); /* error用に101ms送信 */
+            CheckSendDelay(11); /* error用に110ms送信用 */
         }
         else
         {
-            CheckSendDelay(100); /* 正常用に100ms送信 */
+            CheckSendDelay(10); /* 正常用に100ms送信用 */
         }
 
         if (error_status == ERROR)
